@@ -7,8 +7,6 @@ app.use(cors());
 app.use(express.json());
 
 const users = [];
-const messages = [];
-
 app.post('/participants', (req, res) => {
     const userName = req.body;
     users.push(userName);
