@@ -15,7 +15,7 @@ let db;
 const mongoClient = new MongoClient(process.env.MONGO_URI);
 mongoClient.connect().then(() => { db = mongoClient.db("UOLdb");});
 
-const nameSchema = joi.object({ name: joi.string().required(),});
+const nameSchema = joi.object({ name: joi.string().min(1).required(),});
 const messageSchema = joi.object({
     to: joi.string().min(1).required(),
     text: joi.string().min(1).required(),
@@ -24,7 +24,6 @@ const messageSchema = joi.object({
 app.post('/participants', async (req, res) => {
     const { name } = req.body;
 
-    
     const validateName = nameSchema.validate(req.body);
 
     if (validateName.error) {
@@ -58,7 +57,7 @@ app.post('/participants', async (req, res) => {
 app.get('/participants', async (req, res) => {
     try {
         const participantes = await db.collection("participants").find({}).toArray();
-        res.sendStatus(201);
+        res.send(participantes);
     } catch {
         res.sendStatus(500);
     }
@@ -89,9 +88,18 @@ app.post('/messages', async (req, res) => {
 
 app.get('/messages', async (req, res) => {
     const { user } = req.headers;
+    const limit = req.query.limit;
+    if(limit === null){
+        limit = 100;
+    }
     await db.collection("messages").deleteMany({ from: null });
-    const list = await db.collection("messages").find().toArray();
-    res.send(list);
+    const list = await db.collection("messages")
+    .find(
+        {
+            $or: [{to: 'Todos'}, {to: user}, {from: user}]
+        }
+    ).limit(20).sort({_id: -1}).toArray();
+    res.send(list.reverse());
 });
 app.post('/status', async (req, res) => {
     const {user} = req.headers;
@@ -114,24 +122,24 @@ async function checkUserTime() {
     await mongoClient.connect();
     const awayUser = await db.collection("participants").find({ lastStatus: { $lt: LastTime } }).toArray();
 
-    // console.log(awayUser.name);
-    // if(awayUser != null){
-    //      await db.collection("messages").insertOne(
-    //          {
-    //              from: awayUser.name,
-    //              to,
-    //             text,
-    //             type,
-    //             time: dayjs().format("HH:mm:ss")
-    //          }
-    //      );
-    //     console.log("mandei a menssagem");        
-    //     await db.collection("participants").deleteOne({ id: awayUser.id });
-    //     return
-    // }
-    // console.log("ele ta na sala ainda");
+    if(awayUser != null){     
+        awayUser.forEach(part =>{
+            console.log(part.name);
+            db.collection("participants").deleteOne({ id: part.id });
+            db.collection("messages").insertOne(
+                {
+                    from: part.name,
+                    to: 'Todos',
+                    text: 'sai da sala...',
+                    type: 'status',
+                    time: dayjs().format("HH:mm:ss")
+                }
+            );
+        });
+        return
+    }
 }
 
-// setInterval(checkUserTime, 10000);
+setInterval(checkUserTime, 5000);
 
 app.listen(5000), () => console.log("Listening on port 5000");
