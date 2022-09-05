@@ -21,110 +21,66 @@ const messageSchema = joi.object({
     text: joi.string().min(1).required(),
     type: joi.valid('message', 'private_message'),
 });
+
 app.post('/participants', async (req, res) => {
+
     const { name } = req.body;
 
     const validateName = nameSchema.validate(req.body);
-
     if (validateName.error) {
         res.sendStatus(422);
     }
+
     const OnlineUser = await db.collection("participants").findOne({name});
     if(OnlineUser){
         res.status(409).send("Usuario ja existente");
         return    
     }
-    try {    
-        db.collection("participants").insertOne({
-            name,
-            lastStatus: Date.now(),
-        });
+
+    try {  
+
+        db.collection("participants").insertOne(
+            {
+                name,
+                lastStatus: Date.now(),
+            }
+        );
+
         db.collection("messages").insertOne(
-        {
-            from: name,
-            to: 'Todos',
-            text: 'entra na sala...',
-            type: 'status',
-            time: dayjs().format("HH:mm:ss")
-        }
+            {
+                from: name,
+                to: 'Todos',
+                text: 'entra na sala...',
+                type: 'status',
+                time: dayjs().format("HH:mm:ss")
+            }
         );
         res.sendStatus(201);
-    } catch {
-        res.sendStatus(500);
-    }
+
+    } catch { res.sendStatus(500); }
 
 });
+
 app.get('/participants', async (req, res) => {
+
     try {
+
         const participantes = await db.collection("participants").find({}).toArray();
         res.send(participantes);
-    } catch {
-        res.sendStatus(500);
-    }
-});
-app.post('/messages', async (req, res) => {
-    const { to, text, type } = req.body;
-    const { user } = req.headers;
-    const validation = messageSchema.validate(req.body);
-    try {
-        if(!validation.error){
-            await db.collection("messages").insertOne(
-                {
-                    from: user,
-                    to,
-                    text,
-                    type,
-                    time: dayjs().format("HH:mm:ss")
-                });
-                res.sendStatus(201);
-                return
-        }
-        res.send(validation.error);
-        return       
-    } catch {
-        res.sendStatus(500);
-    }
-});
 
-app.get('/messages', async (req, res) => {
-    const { user } = req.headers;
-    const limit = req.query.limit;
-    if(limit === null){
-        limit = 100;
-    }
-    await db.collection("messages").deleteMany({ from: null });
-    const list = await db.collection("messages")
-    .find(
-        {
-            $or: [{to: 'Todos'}, {to: user}, {from: user}]
-        }
-    ).limit(20).sort({_id: -1}).toArray();
-    res.send(list.reverse());
+    } catch { res.sendStatus(500); }
+
 });
-app.post('/status', async (req, res) => {
-    const {user} = req.headers;
-    const newStatus = await db.collection("participants").findOne({name: user});
-    if(newStatus != null){
-        await db.collection('participants').updateOne({
-            lastStatus: newStatus.lastStatus,
-        },
-        {
-            $set: {lastStatus: Date.now()}
-        });
-        res.sendStatus(201);
-        return
-    } 
-    res.sendStatus(404);
-})
 
 async function checkUserTime() {
+
     const LastTime = Date.now() - 10000;
+
     await mongoClient.connect();
     const awayUser = await db.collection("participants").find({ lastStatus: { $lt: LastTime } }).toArray();
 
     if(awayUser != null){     
         awayUser.forEach(part =>{
-            console.log(part.name);
             db.collection("participants").deleteOne({ id: part.id });
             db.collection("messages").insertOne(
                 {
@@ -139,6 +95,76 @@ async function checkUserTime() {
         return
     }
 }
+
+app.post('/messages', async (req, res) => {
+
+    const { to, text, type } = req.body;
+    const { user } = req.headers;
+
+    const validation = messageSchema.validate(req.body);
+
+    try {
+
+        if(!validation.error){
+            await db.collection("messages").insertOne(
+                {
+                    from: user,
+                    to,
+                    text,
+                    type,
+                    time: dayjs().format("HH:mm:ss")
+                }
+            );
+            res.sendStatus(201);
+            return
+        }
+        res.send(validation.error);
+        return
+
+    } catch { res.sendStatus(500); }
+});
+
+app.get('/messages', async (req, res) => {
+
+    const { user } = req.headers;
+
+    const limit = req.query.limit;
+    if(limit === null){
+        limit = 100;
+    }
+
+    await db.collection("messages").deleteMany({ from: null });
+
+    const list = await db.collection("messages")
+
+    .find(
+        {
+            $or: [{to: 'Todos'}, {to: user}, {from: user}]
+        }
+    ).limit(20).sort({_id: -1}).toArray();
+
+    res.send(list.reverse());
+
+});
+
+app.post('/status', async (req, res) => {
+
+    const {user} = req.headers;
+
+    const newStatus = await db.collection("participants").findOne({name: user});
+    if(newStatus != null){
+        await db.collection('participants').updateOne({
+            lastStatus: newStatus.lastStatus,
+        },
+        {
+            $set: {lastStatus: Date.now()}
+        });
+        res.sendStatus(201);
+        return
+    }
+
+    res.sendStatus(404);
+})
 
 setInterval(checkUserTime, 5000);
 
